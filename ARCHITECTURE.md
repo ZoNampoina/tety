@@ -45,3 +45,8 @@ Changer d'adresse, de domaine ou de profil navigateur change l'origine de stocka
 Une future application Android empaquetée peut réutiliser l'interface et les modules de données. Les opérations GPS, caméra, microphone, partage et stockage sont les frontières à isoler derrière des adaptateurs avant d'ajouter des extensions natives. Le format d'archive et les contrats des observations doivent rester compatibles, avec une migration explicite si le schéma change.
 
 Cette livraison ne revendique pas un APK. Le gain éventuel d'un emballage natif doit être évalué sur la conservation, les permissions et l'énergie après réception de la PWA. Le guide `RECEPTION_ANDROID.md` est la liste des essais encore à réaliser sur les téléphones de mission ; il ne prétend pas qu'une vérification physique a déjà eu lieu.
+
+## Modules V2
+
+map.mjs gère Leaflet local, les fonds en ligne et les extraits vectoriels OSM exportables dans settings. fieldwork.mjs fournit les modèles et le bilan de journée ; word-report.mjs crée un paquet OOXML DOCX entièrement local. terrain-tools.mjs porte la checklist, le compteur depuis export et l’éditeur photo. Les versions annotées sont des assets distincts ; questionnaire.photoNotes relie original et annotation avec sa légende. Les références sont validées et remappées en restauration. Les traces sont regroupées par missionId effectif.
+

@@ -58,3 +58,13 @@ Avant la descente, la séquence minimale est : ouverture en mode avion, brouillo
 ## Limites à garder dans la réception
 
 Le stockage navigateur peut être effacé par l'utilisateur, le système ou une politique de l'appareil. Une archive indépendante reste nécessaire. Les archives sont des fichiers JSON non chiffrés, avec les médias encodés ; le format impose 25 Mio par pièce et 100 Mio par archive. Les dernières données encore en cours d'écriture au moment d'un arrêt brutal peuvent ne pas avoir été validées. La disponibilité des permissions, le GPS sans réseau et la gestion d'énergie varient selon le téléphone : ils doivent être constatés sur l'appareil de mission.
+
+## Réception des fonctions V2
+
+- Essayer Plan, Relief, Satellite (année 2000) et Local hors ligne ; préparer un seul AERP puis couper le réseau et rouvrir la carte.
+- Zoomer au pincement, déplacer, sélectionner un permis et une observation, vérifier le cercle de précision GPS ; démarrer, mettre en pause et terminer une trace, puis exporter GPX.
+- Remplir chaque modèle, changer de modèle et vérifier que les champs restent conservés ; tester un code d’échantillon déjà utilisé.
+- Légender et annoter une photo ; retrouver l’original et la version annotée après fermeture puis après transfert d’archive.
+- Cocher rapidement plusieurs éléments de checklist, ajouter un élément, puis rouvrir la mission.
+- Vérifier le bilan local de journée et ouvrir son DOCX dans Word ou une application compatible.
+

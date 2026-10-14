@@ -192,7 +192,7 @@ function checkRecord(name, record) {
     if (record.blob.size > MAX_ASSET_BYTES) throw error(`Le fichier ${record.id} dépasse 25 Mio. Réduisez sa taille.`, 'ASSET_TOO_LARGE');
     if (typeof record.type !== 'string' || record.type.length > 200 || /[\r\n]/.test(record.type)) throw error(`Type de fichier invalide pour ${record.id}.`);
     checkText(record.name, `${record.id}.name`, { max: 20000 });
-    if (record.kind !== undefined && !['photo', 'audio', 'document', 'voice-segment'].includes(record.kind)) throw error(`Catégorie de fichier invalide pour ${record.id}.`);
+    if (record.kind !== undefined && !['photo', 'photo-annotation', 'audio', 'document', 'voice-segment'].includes(record.kind)) throw error(`Catégorie de fichier invalide pour ${record.id}.`);
   }
 }
 
@@ -287,9 +287,9 @@ function hasReference(value, store, id) {
   if (!value || typeof value !== 'object' || value instanceof Blob) return false;
   if (Array.isArray(value)) return value.some(item => hasReference(item, store, id));
   if (store === 'missions' && typeof value.id === 'string' && settingType(value.id, 'activeMission') && value.value === id) return true;
-  const singular = store === 'missions' ? 'missionId' : 'assetId';
+  const singular = store === 'missions' ? ['missionId'] : ['assetId','originalId','annotatedAssetId'];
   const plural = store === 'missions' ? 'missionIds' : 'assetIds';
-  return Object.entries(value).some(([key, item]) => key === singular ? item === id : key === plural ? Array.isArray(item) && item.includes(id) : hasReference(item, store, id));
+  return Object.entries(value).some(([key, item]) => singular.includes(key) ? item === id : key === plural ? Array.isArray(item) && item.includes(id) : key === 'photoNotes' && store === 'assets' && Object.hasOwn(item || {}, id) ? true : hasReference(item, store, id));
 }
 async function sha256(blob) {
   if (!globalThis.crypto?.subtle) throw error('Le contrôle des sauvegardes nécessite une connexion HTTPS ou localhost.', 'CRYPTO_UNAVAILABLE');
@@ -367,7 +367,7 @@ function decodeBase64(encoded, expectedBytes) {
 }
 function checkReferences(records) {
   const ids = Object.fromEntries(STORE_NAMES.map(name => [name, new Set((records[name] || []).map(record => record.id))]));
-  const refs = { assetId: 'assets', assetIds: 'assets', missionId: 'missions', missionIds: 'missions', observationId: 'observations', observationIds: 'observations' };
+  const refs = { assetId: 'assets', assetIds: 'assets', originalId:'assets', annotatedAssetId:'assets', missionId: 'missions', missionIds: 'missions', observationId: 'observations', observationIds: 'observations' };
   const walk = (value, owner) => {
     if (!value || typeof value !== 'object' || value instanceof Blob) return;
     if (Array.isArray(value)) { value.forEach(item => walk(item, owner)); return; }
@@ -380,7 +380,10 @@ function checkReferences(records) {
           checkId(id, key);
           if (!ids[refs[key]].has(id)) throw error(`La référence ${key}=${id} utilisée par ${owner} est absente.`, 'MISSING_REFERENCE');
         }
-      } else walk(item, owner);
+      } else {
+        if (key === 'photoNotes' && item && typeof item === 'object') for(const id of Object.keys(item)) {checkId(id,'photoNotes');if(!ids.assets.has(id))throw error(`La photo ${id} utilisée par ${owner} est absente.`, 'MISSING_REFERENCE');}
+        walk(item, owner);
+      }
     }
   };
   for (const name of STORE_NAMES) for (const record of records[name] || []) walk(record, record.id);
@@ -446,11 +449,12 @@ function remapReferences(value, maps, storeName) {
   if (value instanceof Blob || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(item => remapReferences(item, maps));
   const result = {};
-  const references = { missionId: 'missions', observationId: 'observations', assetId: 'assets' };
+  const references = { missionId: 'missions', observationId: 'observations', assetId: 'assets', originalId: 'assets', annotatedAssetId: 'assets' };
   const lists = { missionIds: 'missions', observationIds: 'observations', assetIds: 'assets' };
   for (const [key, item] of Object.entries(value)) {
     if (references[key] && typeof item === 'string') result[key] = maps[references[key]].get(item) || item;
     else if (lists[key] && Array.isArray(item)) result[key] = item.map(id => maps[lists[key]].get(id) || id);
+    else if (key === 'photoNotes' && item && typeof item === 'object' && !Array.isArray(item)) result[key] = Object.fromEntries(Object.entries(item).map(([id,note]) => [maps.assets.get(id) || id, remapReferences(note,maps)]));
     else result[key] = remapReferences(item, maps);
   }
   if (storeName === 'settings' && settingType(value.id, 'activeMission') && typeof value.value === 'string') result.value = maps.missions.get(value.value) || value.value;

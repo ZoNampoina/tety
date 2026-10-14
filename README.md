@@ -17,7 +17,7 @@ Création de points incomplets, reprise des brouillons, GPS si le téléphone pe
 
 Les archives `.tety.json` contiennent aussi les photographies, fichiers audio, documents, brouillons et périmètres. Elles s’importent sur un autre appareil préparé. Les versions en conflit sont conservées avec de nouveaux identifiants ; les observations de toutes les missions sont affichées après restauration. Les configurations de périmètres en conflit se comparent dans les paramètres.
 
-L’archive est plafonnée à 100 Mio et chaque fichier à 25 Mio. Les données exportées sont en clair. La carte est un schéma géographique des contours reconstruits, sans fond routier ni obstacles. Les suggestions sont locales et explicables, sans service d’IA externe.
+L’archive est plafonnée à 100 Mio et chaque fichier à 25 Mio. Les données exportées sont en clair. La carte propose des fonds en ligne et des extraits vectoriels OSM préparés hors ligne. Les contours reconstruits et les accès restent à vérifier sur le terrain. Les suggestions sont locales et explicables, sans service d’IA externe.
 
 ## Données AERP
 
@@ -44,3 +44,8 @@ Les observations appartiennent au navigateur et à l’adresse utilisés. Change
 ## Migration depuis la version Sites
 
 Avant de changer d’adresse, exporter une archive complète depuis la version Sites puis l’importer dans la version GitHub Pages. Les deux adresses ont des stockages distincts. Ne pas effacer l’ancienne version avant d’avoir contrôlé les points et photographies restaurés.
+
+## Version 2
+
+Les améliorations de carte, notes, photos, échantillons, bilan, checklist, export Word et logo sont décrites dans [EVOLUTIONS_V2.md](EVOLUTIONS_V2.md). Le fond satellite public est une mosaïque Landsat de l’année 2000. Les cartes préparées hors ligne sont des extraits vectoriels OSM, avec leur source, date et couverture.
+

@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#153f36"/><path d="M114 156h284v60H286v180h-60V216H114z" fill="#eff6e5"/><circle cx="371" cy="344" r="36" fill="#edb55c"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Tety</title>
+  <desc id="desc">Un T dans un repère de localisation à pointe dorée.</desc>
+  <rect width="512" height="512" rx="112" fill="#153f36"/>
+  <path d="M256 100c-75 0-134 59-134 134 0 74 75 143 125 178a16 16 0 0 0 18 0c50-35 125-104 125-178 0-75-59-134-134-134Z" fill="#eff6e5"/>
+  <path d="M179 178h154v42h-56v101h-42V220h-56Z" fill="#153f36"/>
+  <path d="M211 383c12 11 25 21 36 29a16 16 0 0 0 18 0c11-8 24-18 36-29Z" fill="#edb55c"/>
+</svg>
