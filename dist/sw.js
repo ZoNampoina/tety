@@ -1,6 +1,7 @@
-const CACHE='tety-shell-222a32a010c9';
+const CACHE='tety-shell-1e01ebaf4b1e';
+const BASE=new URL('./',self.location.href);
 
-const FILES=["./","./app.mjs","./fieldwork.css","./fieldwork.mjs","./geo.mjs","./icon-192.png","./icon-512.png","./icon-maskable.png","./icon.svg","./index.html","./interview-export.mjs","./interview-library.mjs","./interview-ui.mjs","./interviews.css","./interviews.mjs","./logo.svg","./manifest.webmanifest","./map.css","./map.mjs","./permits.json","./storage.mjs","./style.css","./terrain-tools.css","./terrain-tools.mjs","./vendor/leaflet-LICENSE.txt","./vendor/leaflet.css","./vendor/leaflet.js","./word-report.mjs"];
+const FILES=["./","./app.mjs","./fieldwork.css","./fieldwork.mjs","./geo.mjs","./icon-192.png","./icon-512.png","./icon-maskable.png","./icon.svg","./index.html","./interview-export.mjs","./interview-library.mjs","./interview-ui.mjs","./interviews.css","./interviews.mjs","./logo.svg","./manifest.webmanifest","./map.css","./map.mjs","./permits.json","./pwa.mjs","./storage.mjs","./style.css","./terrain-tools.css","./terrain-tools.mjs","./vendor/leaflet-LICENSE.txt","./vendor/leaflet.css","./vendor/leaflet.js","./word-report.mjs"];
 
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(async c=>{for(const file of FILES){const r=await fetch(file,{cache:'reload'});if(!r.ok)throw new Error('Préparation incomplète '+file);await c.put(file,r);}})));
 
@@ -10,7 +11,7 @@ self.addEventListener('message',event=>{if(event.data==='ACTIVATE_UPDATE')self.s
 
 self.addEventListener('fetch',event=>{
 
- const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
+ const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==BASE.origin||!url.pathname.startsWith(BASE.pathname))return;
 
  if(event.request.mode==='navigate')event.respondWith(caches.open(CACHE).then(async c=>(await c.match('./index.html'))||fetch(event.request)));
 

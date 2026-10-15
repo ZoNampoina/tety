@@ -5,7 +5,7 @@
   "description": "Carnet de reconnaissance AERP Android et PC hors ligne",
   "scripts": {
     "start": "node serve.cjs",
-    "test": "node --test --test-isolation=none tests/geo.test.mjs tests/storage.test.mjs tests/fieldwork.test.mjs tests/word-report.test.mjs tests/terrain-tools.test.mjs tests/map.test.mjs tests/interviews.test.mjs tests/interview-export.test.mjs",
+    "test": "node --test --test-isolation=none tests/geo.test.mjs tests/storage.test.mjs tests/fieldwork.test.mjs tests/word-report.test.mjs tests/terrain-tools.test.mjs tests/map.test.mjs tests/interviews.test.mjs tests/interview-export.test.mjs tests/pwa.test.mjs",
     "prepare-release": "node tools/prepare-release.mjs"
   },
   "engines": {

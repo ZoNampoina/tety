@@ -24,6 +24,8 @@ jobs:
           node-version: '24'
       - name: Vérifier les données et les archives
         run: npm test
+      - name: Préparer la version du cache hors ligne
+        run: npm run prepare-release
       - name: Vérifier la syntaxe de l’application
         run: for source in dist/*.mjs dist/sw.js; do node --check "$source"; done
       - name: Préparer l’application statique

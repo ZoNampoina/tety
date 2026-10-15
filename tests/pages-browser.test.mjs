@@ -46,6 +46,7 @@ test('GitHub Pages project path keeps app, manifest, worker and offline data und
       const manifest = await (await fetch('./manifest.webmanifest')).json();
       const manifestURL = new URL('./manifest.webmanifest', location.href);
       return {
+        id: new URL(manifest.id, new URL(manifest.start_url, manifestURL).origin + '/').pathname,
         scope: new URL(registration.scope).pathname,
         worker: new URL(registration.active.scriptURL).pathname,
         start: new URL(manifest.start_url, manifestURL).pathname,
@@ -53,7 +54,7 @@ test('GitHub Pages project path keeps app, manifest, worker and offline data und
         count: (await (await fetch('./permits.json')).json()).length
       };
     });
-    assert.deepEqual(ready, { scope: '/tety/', worker: '/tety/sw.js', start: '/tety/', manifestScope: '/tety/', count: 4 });
+    assert.deepEqual(ready, { id: '/tety/', scope: '/tety/', worker: '/tety/sw.js', start: '/tety/', manifestScope: '/tety/', count: 4 });
     await context.setOffline(true);
     await page.reload();
     await page.getByText('Vos périmètres', { exact: true }).waitFor();
