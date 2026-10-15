@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {CHECKLIST,checklistItems,checklistMarkup,backupChanges,annotationLine} from '../dist/terrain-tools.mjs';
+import {CHECKLIST,checklistItems,checklistMarkup,backupChanges,backupMarkup,annotationLine} from '../dist/terrain-tools.mjs';
 import {createArchive,validateArchive,mergeArchiveRecords} from '../dist/storage.mjs';
 const empty=()=>({observations:[],assets:[],missions:[],drafts:[],settings:[]});
 test('departure checklist keeps user items, checked values and escaped labels',()=>{
@@ -11,10 +11,18 @@ test('departure checklist keeps user items, checked values and escaped labels',(
 });
 test('backup state includes records modified since export and drafts not yet saved as observations',()=>{
  const r=empty();r.observations.push({id:'old',createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-14T00:00:00Z'});r.drafts.push({id:'draft',createdAt:'2026-10-14T00:00:00Z'});r.assets.push({id:'a',createdAt:'2026-10-10T00:00:00Z'});
- assert.deepEqual(backupChanges(r,'2026-10-13T00:00:00Z'),{observations:1,drafts:1,assets:0,missions:0,maps:0,tracks:0});
- assert.deepEqual(backupChanges(r,null),{observations:1,drafts:1,assets:1,missions:0,maps:0,tracks:0});
+ assert.deepEqual(backupChanges(r,'2026-10-13T00:00:00Z'),{observations:1,drafts:1,assets:0,missions:0,maps:0,tracks:0,interviews:0,interviewPeople:0,interviewMeetings:0});
+ assert.deepEqual(backupChanges(r,null),{observations:1,drafts:1,assets:1,missions:0,maps:0,tracks:0,interviews:0,interviewPeople:0,interviewMeetings:0});
  r.settings.push({id:'map-pack:42278',updatedAt:'2026-10-14T00:00:00Z'},{id:'map-tracks:m',updatedAt:'2026-10-14T00:00:00Z'});
  assert.equal(backupChanges(r,'2026-10-13T00:00:00Z').maps,1);assert.equal(backupChanges(r,'2026-10-13T00:00:00Z').tracks,1);
+});
+test('backup reminder includes interview edits, new people and meetings without counting unchanged records',()=>{
+ const records={...empty(),observations:[{id:'point',createdAt:'2026-10-14T00:00:00Z'}],interviews:[{id:'edited',createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-14T09:00:00Z'},{id:'unchanged',createdAt:'2026-10-10T00:00:00Z',updatedAt:'2026-10-13T00:00:00Z'}],interviewPeople:[{id:'new-person',createdAt:'2026-10-14T00:00:00Z'},{id:'old-person',createdAt:'2026-10-01T00:00:00Z'}],interviewMeetings:[{id:'edited-meeting',createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-14T00:00:00Z'}]};
+ const since=backupChanges(records,'2026-10-13T00:00:00Z');
+ assert.equal(since.observations,1);assert.equal(since.interviews,1);assert.equal(since.interviewPeople,1);assert.equal(since.interviewMeetings,1);
+ const first=backupChanges(records,null);assert.equal(first.interviews,2);assert.equal(first.interviewPeople,2);assert.equal(first.interviewMeetings,1);
+ const markup=backupMarkup(records,'2026-10-13T00:00:00Z');assert.match(markup,/1 observation\(s\)/);assert.match(markup,/1 entretien\(s\)/);assert.match(markup,/1 fiche\(s\) de personne/);assert.match(markup,/1 réunion\(s\)/);
+ assert.match(backupMarkup(records,null),/Première sauvegarde à exporter/);
 });
 test('archive round-trip retains original photo, caption, separate annotation and optional structured notes',async()=>{
  const r=empty();r.missions.push({id:'m',checklist:{'depart-0':true},checklistExtra:[{id:'extra',group:'Personnel',label:'Eau'}]});

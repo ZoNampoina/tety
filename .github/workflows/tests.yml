@@ -19,4 +19,4 @@ jobs:
       - name: Vérifier les tests
         run: npm test
       - name: Vérifier la syntaxe
-        run: node --check dist/app.mjs
+        run: for source in dist/*.mjs dist/sw.js; do node --check "$source"; done

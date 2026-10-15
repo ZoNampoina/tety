@@ -10,9 +10,10 @@ const { getChromium, launchOptions } = require('./browser-runtime.cjs');
 test('real IndexedDB commits, reloads, atomic rollback and loss-preserving restore', { skip: process.env.TETY_BROWSER_TESTS !== '1' }, async () => {
   const chromium = getChromium();
   const source = await readFile(new URL('../dist/storage.mjs', import.meta.url));
+  const interviews = await readFile(new URL('../dist/interviews.mjs', import.meta.url));
   const server = createServer((request, response) => {
-    response.setHeader('Content-Type', request.url === '/storage.mjs' ? 'text/javascript' : 'text/html');
-    response.end(request.url === '/storage.mjs' ? source : '<!doctype html><title>Tety storage verification</title>');
+    response.setHeader('Content-Type', request.url?.endsWith('.mjs') ? 'text/javascript' : 'text/html');
+    response.end(request.url === '/storage.mjs' ? source : request.url === '/interviews.mjs' ? interviews : '<!doctype html><title>Tety storage verification</title>');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let browser;
@@ -61,12 +62,39 @@ test('real IndexedDB commits, reloads, atomic rollback and loss-preserving resto
       if (observations.length !== 2 || new Set(observations.map(item => item.notes)).size !== 2) throw Error('Restore overwrote local data');
       let protectedAsset = false;
       try { await store.remove('assets', 'a'); } catch (cause) { protectedAsset = cause.code === 'REFERENCE_IN_USE'; }
-      return { complete, rollbackRejected, restored, protectedAsset, count: observations.length };
+      const model = await import('/interviews.mjs');
+      const person = model.createPerson({ id: 'person', name: 'Témoin', role: 'Maire' });
+      await store.put('interviewPeople', person);
+      const question = { id: 'q', label: 'Témoignage', type: 'text' }, initial = model.createInterview({ id: 'interview', person });
+      const versionA = model.writeAnswer(initial, question, { value: 'Variante A' });
+      const versionB = model.writeAnswer(initial, question, { value: 'Variante B' });
+      await store.saveInterviewDraft(versionA);
+      let conflict = false;
+      try { await store.saveInterviewDraft(versionB); } catch (cause) { conflict = cause.code === 'REVISION_CONFLICT'; }
+      const continuedB = model.writeAnswer(versionB, question, { value: 'Variante B poursuivie' });
+      let continuedBlocked = false;
+      try { await store.saveInterviewDraft(continuedB); } catch (cause) { continuedBlocked = cause.code === 'REVISION_CONFLICT'; }
+      const rescueArchive = JSON.parse(await (await store.exportArchive()).text());
+      const rescueValues = rescueArchive.stores.interviews.map(record => record.answers.q.value).sort();
+      const recovered = await store.readInterviews();
+      const recovery = recovered.find(record => record.recoveryOf === initial.id);
+      if (!recovery) throw Error('Conflicting recovery copy missing');
+      await store.saveInterviewDraft(model.writeAnswer(recovery, question, { value: 'Variante B terminée' }));
+      const savedInterviews = await store.readInterviews();
+      let protectedPerson = false;
+      try { await store.remove('interviewPeople', person.id); } catch (cause) { protectedPerson = cause.code === 'REFERENCE_IN_USE'; }
+      return { complete, rollbackRejected, restored, protectedAsset, count: observations.length, conflict, continuedBlocked, rescueValues, protectedPerson, interviewValues: savedInterviews.map(record => record.answers.q.value).sort(), recoveryCleared: !localStorage.getItem('tety:emergency-draft:interview:'+initial.id) };
     });
     assert.equal(result.rollbackRejected, true);
     assert.equal(result.protectedAsset, true);
     assert.equal(result.restored.conflicts, 1);
     assert.equal(result.count, 2);
+    assert.equal(result.conflict, true);
+    assert.equal(result.continuedBlocked, true);
+    assert.deepEqual(result.rescueValues, ['Variante A', 'Variante B poursuivie']);
+    assert.deepEqual(result.interviewValues, ['Variante A', 'Variante B terminée']);
+    assert.equal(result.recoveryCleared, true);
+    assert.equal(result.protectedPerson, true);
     await page.reload();
     assert.equal(await page.evaluate(async () => (await (await import('/storage.mjs')).readAll('observations')).length), 2);
     await context.close();

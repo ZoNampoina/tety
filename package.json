@@ -1,11 +1,11 @@
 {
   "name": "tety",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Carnet de reconnaissance AERP Android et PC hors ligne",
   "scripts": {
     "start": "node serve.cjs",
-    "test": "node --test --test-isolation=none tests/geo.test.mjs tests/storage.test.mjs tests/fieldwork.test.mjs tests/word-report.test.mjs tests/terrain-tools.test.mjs tests/map.test.mjs",
+    "test": "node --test --test-isolation=none tests/geo.test.mjs tests/storage.test.mjs tests/fieldwork.test.mjs tests/word-report.test.mjs tests/terrain-tools.test.mjs tests/map.test.mjs tests/interviews.test.mjs tests/interview-export.test.mjs",
     "prepare-release": "node tools/prepare-release.mjs"
   },
   "engines": {

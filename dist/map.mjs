@@ -152,7 +152,7 @@ export function mountMap(container, options={}) {
   const selected=()=>permits.filter(p=>!String(options.mapPermit||'')||String(p.id)===String(options.mapPermit));
   const colors=new Map(permits.map((p,i)=>[String(p.id),PERMIT_COLORS[i%PERMIT_COLORS.length]]));
   const notify=options.notify||(()=>{}),packs=new Map(),abort=new AbortController(),listeners=[];
-  const map=L.map(root.querySelector('[data-field-map]'),{zoomControl:true,attributionControl:true,preferCanvas:false,maxZoom:20,minZoom:3,tap:true}).setView([-21.4,48.1],8);
+  const map=L.map(root.querySelector('[data-field-map]'),{zoomControl:true,attributionControl:true,preferCanvas:false,maxZoom:20,minZoom:3,tap:true,zoomAnimation:false,fadeAnimation:false}).setView([-21.4,48.1],8);
   L.control.scale({imperial:false,position:'bottomleft'}).addTo(map);
   map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
   const groups=Object.fromEntries(['permits','cells','observations','roads','water','places','protected','gps','measure','track','coverage'].map(k=>[k,L.layerGroup().addTo(map)]));
@@ -165,7 +165,7 @@ export function mountMap(container, options={}) {
   const query=selector=>root.querySelector(selector);
   const setStatus=text=>{if(!destroyed)query('[data-map-status]').textContent=text;};
   const chosen=selected();
-  function recenter(){const b=L.latLngBounds([]);selected().forEach(p=>(p.contours||[]).flat().filter(validPosition).forEach(point=>b.extend([point.lat,point.lng])));if(b.isValid())map.fitBounds(b,{padding:[25,25],maxZoom:14});}
+  function recenter(){const b=L.latLngBounds([]);selected().forEach(p=>(p.contours||[]).flat().filter(validPosition).forEach(point=>b.extend([point.lat,point.lng])));if(b.isValid())map.fitBounds(b,{padding:[25,25],maxZoom:14,animate:false});}
   function closeDetail(){query('[data-map-detail]').hidden=true;}
   function detail(html){const el=query('[data-map-detail]');el.innerHTML=html+'<button type="button" data-map-close>Fermer</button>';el.hidden=false;el.querySelector('[data-map-close]').onclick=closeDetail;}
   function permitDetail(p){
@@ -268,5 +268,5 @@ export function mountMap(container, options={}) {
     const settings=options.readSettings?await options.readSettings():await db.readAll('settings');if(destroyed)return;tracks=restoreTracks(settings,options.missionId||null);const pending=tracks.findLast(t=>t.state==='paused');if(pending){track={...pending,state:'paused'};tracks=tracks.filter(t=>t.id!==pending.id);}
     drawVectors();packList();trackState();
   })().catch(e=>notify(e.message||'Impossible de charger les extraits locaux.'));
-  return {ready,updatePosition,destroy(){if(destroyed)return;pauseTrack();destroyed=true;abort.abort();stopWatch();listeners.forEach(remove=>remove());map.off();map.remove();root.classList.remove('field-map-expanded');}};
+  return {ready,updatePosition,destroy(){if(destroyed)return;pauseTrack();destroyed=true;abort.abort();stopWatch();listeners.forEach(remove=>remove());map.stop();map.off();map.remove();root.classList.remove('field-map-expanded');}};
 }

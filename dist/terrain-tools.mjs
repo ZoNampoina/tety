@@ -16,12 +16,12 @@ export function backupChanges(records,lastExport) {
   const limit=lastExport?Date.parse(lastExport):-Infinity;
   const changed=name=>(records[name]||[]).filter(r=>Math.max(Date.parse(r.updatedAt||r.createdAt||'')||0,Date.parse(r.createdAt||'')||0)>limit).length;
   const settingChanges=prefix=>(records.settings||[]).filter(r=>r.id.startsWith(prefix)&&(Date.parse(r.updatedAt||'')||0)>limit).length;
-  return {observations:changed('observations'),drafts:changed('drafts'),assets:changed('assets'),missions:changed('missions'),maps:settingChanges('map-pack:'),tracks:settingChanges('map-tracks:')};
+  return {observations:changed('observations'),drafts:changed('drafts'),assets:changed('assets'),missions:changed('missions'),maps:settingChanges('map-pack:'),tracks:settingChanges('map-tracks:'),interviews:changed('interviews'),interviewPeople:changed('interviewPeople'),interviewMeetings:changed('interviewMeetings')};
 }
 export function backupMarkup(records,lastExport) {
   const c=backupChanges(records,lastExport);
   const text=lastExport?`Dernier export : ${new Date(lastExport).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}`:'Première sauvegarde à exporter';
-  return `<div class="backup-state"><strong>${escapeHTML(text)}</strong><p>${c.observations} observation(s), ${c.drafts} brouillon(s), ${c.assets} pièce(s), ${c.missions} mission(s), ${c.maps} secteur(s) de carte et ${c.tracks} lot(s) de traces ajoutés ou modifiés depuis.</p><small>L’export déclenché doit être conservé dans vos fichiers ou sur un autre appareil.</small></div>`;
+  return `<div class="backup-state"><strong>${escapeHTML(text)}</strong><p>${c.observations} observation(s), ${c.drafts} brouillon(s), ${c.assets} pièce(s), ${c.missions} mission(s), ${c.maps} secteur(s) de carte, ${c.tracks} lot(s) de traces, ${c.interviews} entretien(s), ${c.interviewPeople} fiche(s) de personne et ${c.interviewMeetings} réunion(s) ajoutés ou modifiés depuis.</p><small>L’export déclenché doit être conservé dans vos fichiers ou sur un autre appareil.</small></div>`;
 }
 export function annotationLine(ctx,mark,width,height) {
   const [x1,y1,x2,y2]=mark.points.map((v,i)=>v*(i%2?height:width));

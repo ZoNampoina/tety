@@ -1,6 +1,6 @@
-const CACHE='tety-shell-3fd107da0e84';
+const CACHE='tety-shell-222a32a010c9';
 
-const FILES=["./","./app.mjs","./fieldwork.css","./fieldwork.mjs","./geo.mjs","./icon-192.png","./icon-512.png","./icon-maskable.png","./icon.svg","./index.html","./logo.svg","./manifest.webmanifest","./map.css","./map.mjs","./permits.json","./storage.mjs","./style.css","./terrain-tools.css","./terrain-tools.mjs","./vendor/leaflet-LICENSE.txt","./vendor/leaflet.css","./vendor/leaflet.js","./word-report.mjs"];
+const FILES=["./","./app.mjs","./fieldwork.css","./fieldwork.mjs","./geo.mjs","./icon-192.png","./icon-512.png","./icon-maskable.png","./icon.svg","./index.html","./interview-export.mjs","./interview-library.mjs","./interview-ui.mjs","./interviews.css","./interviews.mjs","./logo.svg","./manifest.webmanifest","./map.css","./map.mjs","./permits.json","./storage.mjs","./style.css","./terrain-tools.css","./terrain-tools.mjs","./vendor/leaflet-LICENSE.txt","./vendor/leaflet.css","./vendor/leaflet.js","./word-report.mjs"];
 
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(async c=>{for(const file of FILES){const r=await fetch(file,{cache:'reload'});if(!r.ok)throw new Error('Préparation incomplète '+file);await c.put(file,r);}})));
 

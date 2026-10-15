@@ -1,6 +1,6 @@
 # Vérifications
 
-Les tests de géométrie et d'archives utilisent uniquement Node.js récent (22 ou supérieur). Depuis la racine du dépôt :
+Les tests de géométrie et d'archives utilisent uniquement Node.js récent (24 ou supérieur). Depuis la racine du dépôt :
 
 ```sh
 npm test
@@ -16,7 +16,7 @@ npx playwright install chromium
 Puis, dans un terminal Bash :
 
 ```sh
-TETY_BROWSER_TESTS=1 node --test tests/storage-browser.test.mjs tests/pages-browser.test.mjs
+TETY_BROWSER_TESTS=1 node --test tests/storage-browser.test.mjs tests/pages-browser.test.mjs tests/map-browser.test.mjs tests/interviews-browser.test.mjs
 node tests/app-browser.cjs
 node tests/audio-browser.cjs
 ```
@@ -26,3 +26,5 @@ Sous PowerShell, utiliser `$env:TETY_BROWSER_TESTS='1'` avant la commande Node. 
 Un navigateur Chromium ou Edge déjà installé peut être utilisé en définissant `TETY_BROWSER_EXECUTABLE` à son chemin. Une installation existante du module Playwright peut être utilisée en définissant `TETY_PLAYWRIGHT_PATH` à son répertoire. Aucun chemin propre au poste de création n'est requis.
 
 Les scripts `app-browser.cjs` et `audio-browser.cjs` produisent des captures et une archive de test dans le répertoire courant. Les utiliser depuis la racine du dépôt. Ils emploient un GPS et un microphone simulés ; la réception sur téléphone Android physique reste nécessaire.
+
+Les tests Entretiens vérifient aussi une vraie migration depuis IndexedDB version 1, les relations multi-permis et sources, les reprises après échec d’écriture, les archives en conflit, les exports et la saisie sur 390 pixels et PC. Leurs captures et fichiers de réception restent dans `work/qa/` (ignoré par Git). Les données de démonstration ne sont pas publiées dans la PWA.

@@ -37,7 +37,7 @@ Les tests automatiques couvrent le stockage réel, le GPS simulé, les photos im
 
 Le dépôt https://github.com/ZoNampoina/tety contient les sources. Dans Settings → Pages, choisir GitHub Actions comme source. Les tests sont lancés à chaque mise à jour de main. Le workflow Pages teste puis publie dist à chaque mise à jour de main, après activation de Pages dans les réglages. Il peut aussi être lancé depuis Actions. L’adresse est fournie par ce job de déploiement.
 
-Une seule base de code. Voir ARCHITECTURE.md pour le stockage, le service worker et l’évolution future vers Capacitor. Avant de publier une modification de l’application, lancer node tools/prepare-release.mjs pour changer la version du cache selon le contenu des fichiers. Les mises à jour sont proposées depuis les paramètres après sauvegarde du brouillon ; elles ne modifient pas la base IndexedDB.
+Une seule base de code. Voir ARCHITECTURE.md pour le stockage, le service worker et l’évolution future vers Capacitor. Avant de publier une modification de l’application, lancer node tools/prepare-release.mjs pour changer la version du cache selon le contenu des fichiers. Les mises à jour sont proposées depuis les paramètres après sauvegarde du brouillon ; elles ne réinitialisent pas la base IndexedDB.
 
 Les observations appartiennent au navigateur et à l’adresse utilisés. Changer d’adresse, de profil ou d’appareil exige un transfert par archive.
 
@@ -49,3 +49,9 @@ Avant de changer d’adresse, exporter une archive complète depuis la version S
 
 Les améliorations de carte, notes, photos, échantillons, bilan, checklist, export Word et logo sont décrites dans [EVOLUTIONS_V2.md](EVOLUTIONS_V2.md). Le fond satellite public est une mosaïque Landsat de l’année 2000. Les cartes préparées hors ligne sont des extraits vectoriels OSM, avec leur source, date et couverture.
 
+
+## Entretiens — version 2.1
+
+L’onglet Entretiens gère réunions, interlocuteurs réutilisables et rencontres distinctes associées à plusieurs permis. Les 77 questions couvrent huit thèmes, avec modes Rapide et Complet, conditions, suggestions locales et modèles personnalisables. Photos, documents, GPS et notes se conservent hors ligne avec autosauvegarde et reprise.
+
+Les réponses gardent leur source, date, portée, fiabilité et historique. Les comparaisons et synthèses par permis conservent les témoignages divergents, les manques et les actions de vérification. Les rapports existent en CSV, DOCX et HTML imprimable en PDF ; ils référencent les pièces dont les originaux sont inclus dans les archives complètes JSON. Les permis 39985, 40378 et 40466 sont ajoutés uniquement s’ils sont absents, sans statut ni contour inventé. Aucun service ni paquet d’exécution supplémentaire. Voir [INTERVIEWS.md](INTERVIEWS.md) pour l’audit, la réception et les limites Android.

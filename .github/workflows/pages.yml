@@ -25,7 +25,7 @@ jobs:
       - name: Vérifier les données et les archives
         run: npm test
       - name: Vérifier la syntaxe de l’application
-        run: node --check dist/app.mjs
+        run: for source in dist/*.mjs dist/sw.js; do node --check "$source"; done
       - name: Préparer l’application statique
         uses: actions/upload-pages-artifact@v4
         with:

@@ -16,7 +16,7 @@ Tety est une application Web progressive unique, conçue d'abord pour Android pu
 
 ## Données locales et conservation
 
-La base `tety-field-data` comporte les collections `observations`, `assets`, `missions`, `drafts` et `settings`. Les médias sont conservés comme objets Blob. L'écriture d'une observation contrôle la présence de ses références et valide la transaction avant de confirmer l'enregistrement. Une pièce ou mission encore référencée ne peut pas être supprimée par les opérations protégées du module.
+La base `tety-field-data` conserve les collections `observations`, `assets`, `missions`, `drafts` et `settings`. La version 2 ajoute `interviewPeople`, `interviewMeetings` et `interviews` sans supprimer ni réécrire les collections antérieures. Les médias sont conservés comme objets Blob. L'écriture d'une observation contrôle la présence de ses références et valide la transaction avant de confirmer l'enregistrement. Une pièce ou mission encore référencée ne peut pas être supprimée par les opérations protégées du module.
 
 Les champs du formulaire alimentent un brouillon automatiquement. Une copie textuelle de secours dans localStorage complète IndexedDB ; cette copie ne remplace pas les médias ni une archive indépendante. Les changements de visibilité et de page déclenchent une tentative de conservation. Les garanties de réception portent sur les écritures réellement terminées : aucun navigateur ne peut promettre une dernière écriture après qu'Android a supprimé son processus.
 
@@ -24,7 +24,7 @@ Les notes vocales doivent conserver leurs segments avec un identifiant stable de
 
 ## Archives et transferts
 
-Le format portable `tety-portable-archive`, version 1, regroupe les cinq collections et les médias encodés en base64. Chaque média possède une taille et une empreinte SHA-256 contrôlées avant import. L'import contrôle le format, les identifiants, les références et les fichiers avant d'écrire. Les collisions doivent préserver les fiches locales, créer des copies et remapper les relations. Les collections de permis importées doivent rester accessibles à l'interface même lorsqu'une version différente était déjà présente.
+Le format portable `tety-portable-archive`, version 1, regroupe les collections locales et les médias encodés en base64. Chaque média possède une taille et une empreinte SHA-256 contrôlées avant import. L'import contrôle le format, les identifiants, les références et les fichiers avant d'écrire. Les collisions doivent préserver les fiches locales, créer des copies et remapper les relations. Les collections de permis importées doivent rester accessibles à l'interface même lorsqu'une version différente était déjà présente.
 
 Les limites sont de 25 Mio par pièce et 100 Mio par archive JSON. L'encodage base64 augmente la taille du fichier ; un lot de médias inférieur à 100 Mio peut donc dépasser la limite d'archive. Le format n'est ni un ZIP ni un fichier chiffré. Les exports CSV, GeoJSON et bilan sont des vues de consultation : seule l'archive complète transporte les pièces jointes et les brouillons.
 
@@ -50,3 +50,9 @@ Cette livraison ne revendique pas un APK. Le gain éventuel d'un emballage natif
 
 map.mjs gère Leaflet local, les fonds en ligne et les extraits vectoriels OSM exportables dans settings. fieldwork.mjs fournit les modèles et le bilan de journée ; word-report.mjs crée un paquet OOXML DOCX entièrement local. terrain-tools.mjs porte la checklist, le compteur depuis export et l’éditeur photo. Les versions annotées sont des assets distincts ; questionnaire.photoNotes relie original et annotation avec sa légende. Les références sont validées et remappées en restauration. Les traces sont regroupées par missionId effectif.
 
+
+## Entretiens V2.1
+
+`interviews.mjs` porte les fiches et règles pures ; `interview-library.mjs` les 77 modèles et conditions ; `interview-ui.mjs` le parcours Android et PC ; `interview-export.mjs` les rapports réutilisables. Les réponses gardent une copie de la question et de la personne, leur portée, leur provenance, leur qualité, leurs preuves et les versions antérieures. Les frappes continues sont regroupées sur trente secondes pour un historique lisible, tandis que les choix de fiabilité, portée et provenance sont tracés séparément.
+
+Les sauvegardes d’entretiens sont sérialisées par identifiant, avec contrôle des révisions et secours textuel immédiat. Les pièces sont écrites dans la même transaction que leurs références. Les archives de la version précédente restent acceptées ; la version précédente de Tety ne peut pas lire les nouvelles collections et doit être mise à jour avant leur import. Les anciennes données ne sont pas réinitialisées. La synthèse ne fusionne jamais les témoignages et ne produit aucune conclusion réglementaire.

@@ -1,11 +1,16 @@
 /** Tety's local database and portable, loss-preserving backup format. */
-export const STORE_NAMES = Object.freeze(['observations', 'assets', 'missions', 'drafts', 'settings']);
+import { validatePerson, validateMeeting, validateInterview } from './interviews.mjs';
+const ORIGINAL_STORES = Object.freeze(['observations', 'assets', 'missions', 'drafts', 'settings']);
+const INTERVIEW_STORES = Object.freeze(['interviewPeople', 'interviewMeetings', 'interviews']);
+export const STORE_NAMES = Object.freeze([...ORIGINAL_STORES, ...INTERVIEW_STORES]);
 export const ARCHIVE_SCHEMA_VERSION = 1;
 export const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
 export const MAX_ASSET_BYTES = 25 * 1024 * 1024;
 const DB_NAME = 'tety-field-data';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let databasePromise;
+const interviewWriteQueues = new Map();
+const unresolvedInterviewConflicts = new Set();
 
 export class StorageError extends Error {
   constructor(message, code = 'STORAGE_ERROR', cause) {
@@ -159,6 +164,10 @@ function checkRecord(name, record) {
   checkId(record.id);
   checkJSON(name === 'assets' ? recordMetadata(record) : record);
   for (const key of ['createdAt', 'updatedAt']) if (record[key] !== undefined) checkISO(record[key], `${record.id}.${key}`);
+  if (INTERVIEW_STORES.includes(name)) {
+    try { ({ interviewPeople: validatePerson, interviewMeetings: validateMeeting, interviews: validateInterview })[name](record); }
+    catch (cause) { throw error(cause.message); }
+  }
   if (name === 'observations' || name === 'drafts') {
     for (const [key, min, max] of [['lat', -90, 90], ['lng', -180, 180]]) {
       if (record[key] != null && (typeof record[key] !== 'number' || !Number.isFinite(record[key]) || record[key] < min || record[key] > max)) throw error(`Coordonnée ${key} invalide pour ${record.id}.`);
@@ -252,6 +261,7 @@ export async function get(name, id) {
 export async function put(name, value) {
   checkStore(name);
   if (name === 'observations') return saveObservation(value);
+  if (name === 'interviews') return saveInterview(value);
   const record = name === 'assets' ? await prepareAsset(value) : structuredClone(value);
   checkRecord(name, record);
   return transaction([name], 'readwrite', (tx, done, fail) => {
@@ -267,7 +277,7 @@ export async function put(name, value) {
 }
 export async function remove(name, id) {
   checkStore(name); checkId(id);
-  const guarded = name === 'assets' || name === 'missions';
+  const guarded = ['assets', 'missions', 'observations', 'interviewPeople', 'interviewMeetings', 'interviews'].includes(name);
   return transaction(guarded ? STORE_NAMES : [name], 'readwrite', (tx, done, fail) => {
     const erase = () => { tx.objectStore(name).delete(id); done(true); };
     if (!guarded) { erase(); return; }
@@ -277,7 +287,7 @@ export async function remove(name, id) {
       request.onsuccess = () => {
         if (failed) return;
         const used = request.result.some(record => !(collection === name && record.id === id) && hasReference(record, name, id));
-        if (used) { failed = true; fail(error('Cet élément est encore utilisé par un point, une mission ou un brouillon.', 'REFERENCE_IN_USE')); return; }
+        if (used) { failed = true; fail(error('Cet élément est encore utilisé par une fiche, un entretien ou un brouillon.', 'REFERENCE_IN_USE')); return; }
         if (--remaining === 0) erase();
       };
     }
@@ -287,9 +297,9 @@ function hasReference(value, store, id) {
   if (!value || typeof value !== 'object' || value instanceof Blob) return false;
   if (Array.isArray(value)) return value.some(item => hasReference(item, store, id));
   if (store === 'missions' && typeof value.id === 'string' && settingType(value.id, 'activeMission') && value.value === id) return true;
-  const singular = store === 'missions' ? ['missionId'] : ['assetId','originalId','annotatedAssetId'];
-  const plural = store === 'missions' ? 'missionIds' : 'assetIds';
-  return Object.entries(value).some(([key, item]) => singular.includes(key) ? item === id : key === plural ? Array.isArray(item) && item.includes(id) : key === 'photoNotes' && store === 'assets' && Object.hasOwn(item || {}, id) ? true : hasReference(item, store, id));
+  const singular = { missions: ['missionId'], assets: ['assetId', 'originalId', 'annotatedAssetId'], observations: ['observationId'], interviewPeople: ['personId', 'sourcePersonId'], interviewMeetings: ['meetingId'], interviews: ['interviewId'] }[store] || [];
+  const plural = { missions: 'missionIds', assets: 'assetIds', observations: 'observationIds', interviewPeople: 'personIds', interviewMeetings: 'meetingIds', interviews: 'interviewIds' }[store];
+  return Object.entries(value).some(([key, item]) => singular.includes(key) ? item === id : key === plural ? Array.isArray(item) && item.includes(id) : ['photoNotes', 'captions'].includes(key) && store === 'assets' && Object.hasOwn(item || {}, id) ? true : hasReference(item, store, id));
 }
 async function sha256(blob) {
   if (!globalThis.crypto?.subtle) throw error('Le contrôle des sauvegardes nécessite une connexion HTTPS ou localhost.', 'CRYPTO_UNAVAILABLE');
@@ -339,6 +349,163 @@ export async function saveObservation(value, attachments = []) {
     }
   });
 }
+/** Commit an interview and new attachments atomically, checking every referenced record. */
+export function saveInterview(value, attachments = []) {
+  const record = structuredClone(value), files = structuredClone(attachments);
+  checkRecord('interviews', record);
+  const previous = interviewWriteQueues.get(record.id) || Promise.resolve();
+  const pending = previous.catch(() => {}).then(() => commitInterview(record, files));
+  interviewWriteQueues.set(record.id, pending);
+  const cleanup = () => { if (interviewWriteQueues.get(record.id) === pending) interviewWriteQueues.delete(record.id); };
+  pending.then(cleanup, cleanup);
+  return pending;
+}
+async function commitInterview(value, attachments = []) {
+  if (!Array.isArray(attachments)) throw error('Liste de fichiers invalide.');
+  const record = structuredClone(value);
+  if (unresolvedInterviewConflicts.has(record.id)) {
+    markInterviewConflict(record);
+    throw error('Deux variantes de cet entretien ont été conservées. Fermez puis rouvrez les entretiens pour choisir la fiche à poursuivre.', 'REVISION_CONFLICT');
+  }
+  const prepared = [];
+  for (const attachment of attachments) prepared.push(await prepareAsset(attachment));
+  if (new Set(prepared.map(asset => asset.id)).size !== prepared.length) throw error('Deux fichiers utilisent le même identifiant.');
+  record.assetIds = [...new Set([...(record.assetIds || []), ...prepared.map(asset => asset.id)])];
+  checkRecord('interviews', record);
+  const checks = new Map();
+  const collect = value => {
+    if (!value || typeof value !== 'object' || value instanceof Blob) return;
+    if (Array.isArray(value)) { value.forEach(collect); return; }
+    for (const [key, item] of Object.entries(value)) {
+      const collection = REFERENCE_STORES[key];
+      if (collection && item != null && item !== '') {
+        const ids = key.endsWith('Ids') ? item : [item];
+        if (!Array.isArray(ids)) throw error(`Liste ${key} invalide.`);
+        for (const id of ids) { checkId(id, key); checks.set(`${collection}:${id}`, [collection, id]); }
+      } else {
+        if (['photoNotes', 'captions'].includes(key) && item && typeof item === 'object') for (const id of Object.keys(item)) checks.set(`assets:${id}`, ['assets', id]);
+        collect(item);
+      }
+    }
+  };
+  collect(record);
+  checks.set(`interviews:${record.id}`, ['interviews', record.id]);
+  const candidates = new Map(prepared.map(asset => [asset.id, asset]));
+  return transaction(STORE_NAMES, 'readwrite', (tx, done, fail) => {
+    let remaining = checks.size, failed = false;
+    const abort = cause => { if (!failed) { failed = true; fail(cause); } };
+    const write = () => {
+      if (failed) return;
+      try {
+        for (const asset of prepared) tx.objectStore('assets').put(asset);
+        tx.objectStore('interviews').put(record);
+        done(record);
+      } catch (cause) { abort(cause); }
+    };
+    for (const [collection, id] of checks.values()) {
+      const request = tx.objectStore(collection).get(id);
+      request.onsuccess = () => {
+        if (failed) return;
+        const prior = request.result, candidate = collection === 'assets' ? candidates.get(id) : null;
+        if (collection === 'interviews' && id === record.id) {
+          if (prior && prior.revision === record.revision && canonicalRecord(prior) !== canonicalRecord(record)) { markInterviewConflict(record); abort(error('Deux variantes de cet entretien ont été conservées. Fermez puis rouvrez les entretiens pour choisir la fiche à poursuivre.', 'REVISION_CONFLICT')); return; }
+          if (prior && isNewerInterview(prior, record)) { markInterviewConflict(record); abort(error('Une version plus récente de cet entretien est déjà enregistrée. Votre variante de secours est conservée ; fermez puis rouvrez les entretiens.', 'STALE_WRITE')); return; }
+        } else if (!prior && !candidate) { abort(error(`La référence ${collection}=${id} est absente.`, 'MISSING_REFERENCE')); return; }
+        if (prior && candidate && canonicalRecord(prior) !== canonicalRecord(candidate)) { abort(error(`Le fichier ${id} existe avec un autre contenu.`, 'ASSET_CONFLICT')); return; }
+        if (--remaining === 0) write();
+      };
+    }
+  });
+}
+const INTERVIEW_EMERGENCY_PREFIX = 'tety:emergency-draft:interview:';
+const interviewEmergencyId = id => `interview:${id}`;
+function isNewerInterview(left, right) {
+  return left.revision > right.revision || left.revision === right.revision && Date.parse(left.updatedAt) > Date.parse(right.updatedAt);
+}
+function interviewPayload(record) {
+  const result = { ...record };
+  delete result.recoveryConflict;
+  return canonicalRecord(result);
+}
+function recoveryFingerprint(record) {
+  let hash = 0xcbf29ce484222325n;
+  for (const char of interviewPayload(record)) { hash ^= BigInt(char.codePointAt(0)); hash = BigInt.asUintN(64, hash * 0x100000001b3n); }
+  return hash.toString(16).padStart(16, '0');
+}
+function markInterviewConflict(record) {
+  unresolvedInterviewConflicts.add(record.id);
+  const pending = readEmergencyDraft(interviewEmergencyId(record.id))?.data;
+  const latest = pending && pending.revision >= record.revision ? pending : record;
+  saveEmergencyDraft(interviewEmergencyId(record.id), { ...latest, recoveryConflict: true });
+}
+function cleanInterviewRecovery(saved) {
+  const own = readEmergencyDraft(interviewEmergencyId(saved.id))?.data;
+  if (own && (saved.revision > own.revision || interviewPayload(saved) === interviewPayload(own))) removeEmergencyDraft(interviewEmergencyId(saved.id));
+  if (saved.recoveryOf && saved.recoveryFingerprint) {
+    const source = readEmergencyDraft(interviewEmergencyId(saved.recoveryOf))?.data;
+    if (source && recoveryFingerprint(source) === saved.recoveryFingerprint) removeEmergencyDraft(interviewEmergencyId(saved.recoveryOf));
+    unresolvedInterviewConflicts.delete(saved.recoveryOf);
+  }
+}
+export function readEmergencyInterviews() {
+  const records = [];
+  try {
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(INTERVIEW_EMERGENCY_PREFIX)) continue;
+      const draft = readEmergencyDraft(key.slice('tety:emergency-draft:'.length));
+      try { checkRecord('interviews', draft?.data); records.push(draft.data); } catch { /* A damaged recovery entry must never replace a valid record. */ }
+    }
+  } catch { /* IndexedDB remains authoritative when localStorage is unavailable. */ }
+  return records;
+}
+export function reconcileInterviewDrafts(records, pending = readEmergencyInterviews()) {
+  const result = new Map(records.map(record => [record.id, record]));
+  for (const record of pending) {
+    checkRecord('interviews', record);
+    const prior = result.get(record.id);
+    if (!prior) { result.set(record.id, structuredClone(record)); continue; }
+    const different = interviewPayload(prior) !== interviewPayload(record);
+    if (different && (record.recoveryConflict || record.revision === prior.revision)) {
+      const fingerprint = recoveryFingerprint(record), prefix = `${record.id.slice(0, 180)}~recovery-${fingerprint}`;
+      let copyId = prefix, attempt = 0;
+      while (result.has(copyId) && !(result.get(copyId).recoveryOf === record.id && result.get(copyId).recoveryFingerprint === fingerprint)) copyId = `${prefix}-${++attempt}`;
+      if (!result.has(copyId)) {
+        const recovered = structuredClone(record);
+        delete recovered.recoveryConflict;
+        recovered.id = copyId; recovered.recoveryOf = record.id; recovered.recoveryFingerprint = fingerprint;
+        result.set(copyId, recovered);
+      }
+    } else if (record.revision > prior.revision) result.set(record.id, structuredClone(record));
+  }
+  return [...result.values()];
+}
+/** localStorage is written before this function returns its pending IndexedDB Promise. */
+export function saveInterviewDraft(value) {
+  const record = structuredClone(value);
+  checkRecord('interviews', record);
+  if (unresolvedInterviewConflicts.has(record.id)) record.recoveryConflict = true;
+  const recoveryId = interviewEmergencyId(record.id);
+  const previous = readEmergencyDraft(recoveryId)?.data;
+  if (!previous || !isNewerInterview(previous, record)) saveEmergencyDraft(recoveryId, record);
+  return saveInterview(record).then(saved => {
+    cleanInterviewRecovery(saved);
+    return saved;
+  });
+}
+export async function readInterviews() {
+  const pending = readEmergencyInterviews();
+  let records;
+  try { records = await readAll('interviews'); }
+  catch (cause) { if (!pending.length) throw cause; records = []; }
+  const recovered = reconcileInterviewDrafts(records, pending);
+  const existingIds = new Set(records.map(record => record.id));
+  for (const record of recovered) if (record.recoveryOf && !existingIds.has(record.id)) {
+    try { cleanInterviewRecovery(await saveInterview(record)); }
+    catch { /* Both variants remain visible and their recovery entry remains available. */ }
+  }
+  return recovered;
+}
 async function snapshot() {
   return transaction(STORE_NAMES, 'readonly', (tx, done) => {
     const records = {};
@@ -365,9 +532,10 @@ function decodeBase64(encoded, expectedBytes) {
   if (bytesToBase64(bytes) !== encoded) throw error('Encodage de fichier non canonique.');
   return bytes;
 }
+const REFERENCE_STORES = Object.freeze({ assetId: 'assets', assetIds: 'assets', originalId: 'assets', annotatedAssetId: 'assets', missionId: 'missions', missionIds: 'missions', observationId: 'observations', observationIds: 'observations', personId: 'interviewPeople', sourcePersonId: 'interviewPeople', personIds: 'interviewPeople', meetingId: 'interviewMeetings', meetingIds: 'interviewMeetings', interviewId: 'interviews', interviewIds: 'interviews' });
 function checkReferences(records) {
   const ids = Object.fromEntries(STORE_NAMES.map(name => [name, new Set((records[name] || []).map(record => record.id))]));
-  const refs = { assetId: 'assets', assetIds: 'assets', originalId:'assets', annotatedAssetId:'assets', missionId: 'missions', missionIds: 'missions', observationId: 'observations', observationIds: 'observations' };
+  const refs = REFERENCE_STORES;
   const walk = (value, owner) => {
     if (!value || typeof value !== 'object' || value instanceof Blob) return;
     if (Array.isArray(value)) { value.forEach(item => walk(item, owner)); return; }
@@ -381,7 +549,7 @@ function checkReferences(records) {
           if (!ids[refs[key]].has(id)) throw error(`La référence ${key}=${id} utilisée par ${owner} est absente.`, 'MISSING_REFERENCE');
         }
       } else {
-        if (key === 'photoNotes' && item && typeof item === 'object') for(const id of Object.keys(item)) {checkId(id,'photoNotes');if(!ids.assets.has(id))throw error(`La photo ${id} utilisée par ${owner} est absente.`, 'MISSING_REFERENCE');}
+        if (['photoNotes', 'captions'].includes(key) && item && typeof item === 'object') for(const id of Object.keys(item)) {checkId(id,key);if(!ids.assets.has(id))throw error(`Le fichier ${id} utilisé par ${owner} est absent.`, 'MISSING_REFERENCE');}
         walk(item, owner);
       }
     }
@@ -396,10 +564,12 @@ export async function validateArchive(archive) {
   let totalAssets = 0;
   if (!archive.stores || typeof archive.stores !== 'object' || Object.keys(archive.stores).some(name => !STORE_NAMES.includes(name))) throw error('Collections de sauvegarde invalides.');
   for (const name of STORE_NAMES) {
-    if (!Array.isArray(archive.stores[name]) || archive.stores[name].length > 100000) throw error(`Collection ${name} absente ou trop volumineuse.`);
+    // Archives made before Entretiens remain fully restorable. Original stores stay mandatory.
+    const collection = archive.stores[name] === undefined && INTERVIEW_STORES.includes(name) ? [] : archive.stores[name];
+    if (!Array.isArray(collection) || collection.length > 100000) throw error(`Collection ${name} absente ou trop volumineuse.`);
     const ids = new Set();
     records[name] = [];
-    for (const incoming of archive.stores[name]) {
+    for (const incoming of collection) {
       checkId(incoming?.id);
       if (ids.has(incoming.id)) throw error(`Identifiant ${incoming.id} répété dans ${name}.`);
       ids.add(incoming.id);
@@ -438,7 +608,12 @@ export async function createArchive(records) {
   if (blob.size > MAX_ARCHIVE_BYTES) throw error('La sauvegarde dépasse 100 Mio, limite de ce format sur téléphone. Le stockage local est conservé.', 'ARCHIVE_TOO_LARGE');
   return blob;
 }
-export async function exportArchive() { return createArchive(await snapshot()); }
+export async function exportArchive() {
+  const records = await snapshot();
+  // An export includes keystrokes already captured synchronously while an IDB commit is pending.
+  records.interviews = reconcileInterviewDrafts(records.interviews);
+  return createArchive(records);
+}
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
@@ -449,16 +624,62 @@ function remapReferences(value, maps, storeName) {
   if (value instanceof Blob || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(item => remapReferences(item, maps));
   const result = {};
-  const references = { missionId: 'missions', observationId: 'observations', assetId: 'assets', originalId: 'assets', annotatedAssetId: 'assets' };
-  const lists = { missionIds: 'missions', observationIds: 'observations', assetIds: 'assets' };
+  const references = Object.fromEntries(Object.entries(REFERENCE_STORES).filter(([key]) => !key.endsWith('Ids')));
+  const lists = Object.fromEntries(Object.entries(REFERENCE_STORES).filter(([key]) => key.endsWith('Ids')));
   for (const [key, item] of Object.entries(value)) {
     if (references[key] && typeof item === 'string') result[key] = maps[references[key]].get(item) || item;
     else if (lists[key] && Array.isArray(item)) result[key] = item.map(id => maps[lists[key]].get(id) || id);
-    else if (key === 'photoNotes' && item && typeof item === 'object' && !Array.isArray(item)) result[key] = Object.fromEntries(Object.entries(item).map(([id,note]) => [maps.assets.get(id) || id, remapReferences(note,maps)]));
+    else if (key === 'personSnapshot' && item && typeof item === 'object') result[key] = { ...remapReferences(item, maps), id: maps.interviewPeople.get(item.id) || item.id };
+    else if (['photoNotes', 'captions'].includes(key) && item && typeof item === 'object' && !Array.isArray(item)) result[key] = Object.fromEntries(Object.entries(item).map(([id,note]) => [maps.assets.get(id) || id, remapReferences(note,maps)]));
     else result[key] = remapReferences(item, maps);
   }
   if (storeName === 'settings' && settingType(value.id, 'activeMission') && typeof value.value === 'string') result.value = maps.missions.get(value.value) || value.value;
   return result;
+}
+function referenceShape(value, top = false) {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(item => referenceShape(item));
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (top && key === 'id') result.id = '<record>';
+    else if (REFERENCE_STORES[key] && item != null && item !== '') result[key] = Array.isArray(item) ? item.map(() => `<${REFERENCE_STORES[key]}>`) : `<${REFERENCE_STORES[key]}>`;
+    else if (key === 'personSnapshot' && item && typeof item === 'object') result[key] = { ...referenceShape(item), id: '<person>' };
+    else if (['photoNotes', 'captions'].includes(key) && item && typeof item === 'object' && !Array.isArray(item)) result[key] = Object.values(item).map(item => referenceShape(item)).sort((a, b) => canonical(a).localeCompare(canonical(b)));
+    else if (key === 'value' && typeof value.id === 'string' && settingType(value.id, 'activeMission') && typeof item === 'string') result[key] = '<mission>';
+    else result[key] = referenceShape(item);
+  }
+  return result;
+}
+/** Recognize copies from a previous restore, including mutually referencing records. */
+function reuseImportedCopies(old, incoming, maps) {
+  const indexes = Object.fromEntries(STORE_NAMES.map(name => [name, new Map()]));
+  for (const name of STORE_NAMES) for (const record of old[name].values()) {
+    const signature = canonical(referenceShape(recordMetadata(record), true));
+    if (!indexes[name].has(signature)) indexes[name].set(signature, []);
+    indexes[name].get(signature).push(record);
+  }
+  const proposals = [], reserved = Object.fromEntries(STORE_NAMES.map(name => [name, new Set()]));
+  for (const name of STORE_NAMES) for (const record of incoming[name] || []) {
+    if (!maps[name].has(record.id)) continue;
+    const signature = canonical(referenceShape(recordMetadata(record), true));
+    const prefix = `${record.id.slice(0, 180)}~import-`;
+    const candidates = (indexes[name].get(signature) || []).filter(candidate => candidate.id.startsWith(prefix) && !reserved[name].has(candidate.id)).sort((a, b) => a.id.localeCompare(b.id));
+    if (!candidates.length) continue;
+    const original = maps[name].get(record.id), candidate = candidates[0];
+    maps[name].set(record.id, candidate.id); reserved[name].add(candidate.id);
+    proposals.push({ name, record, original, candidate });
+  }
+  // Propose all identities before checking their references, so cycles can match too.
+  let changed;
+  do {
+    changed = false;
+    for (const proposal of proposals) {
+      const { name, record, original, candidate } = proposal;
+      if (maps[name].get(record.id) === original) continue;
+      const updated = remapReferences(record, maps, name); updated.id = candidate.id;
+      if (canonicalRecord(updated) !== canonicalRecord(candidate)) { maps[name].set(record.id, original); changed = true; }
+    }
+  } while (changed);
 }
 /** Pure conflict planner. Existing records are always retained. */
 export function mergeArchiveRecords(existing, incoming, idFactory = id => `${id.slice(0, 180)}~import-${crypto.randomUUID()}`) {
@@ -483,6 +704,7 @@ export function mergeArchiveRecords(existing, incoming, idFactory = id => `${id.
       changed = true;
     }
   } while (changed);
+  reuseImportedCopies(old, incoming, maps);
   const merged = {}, additions = {};
   let added = 0, identical = 0;
   for (const name of STORE_NAMES) {
@@ -498,7 +720,8 @@ export function mergeArchiveRecords(existing, incoming, idFactory = id => `${id.
     }
   }
   checkReferences(merged);
-  return { merged, additions, added, identical, conflicts: conflictItems.length, conflictItems, idMap: Object.fromEntries(STORE_NAMES.map(name => [name, Object.fromEntries(maps[name])])) };
+  const newConflicts = conflictItems.filter(item => !old[item.store].has(maps[item.store].get(item.from))).map(item => ({ ...item, to: maps[item.store].get(item.from) }));
+  return { merged, additions, added, identical, conflicts: newConflicts.length, conflictItems: newConflicts, idMap: Object.fromEntries(STORE_NAMES.map(name => [name, Object.fromEntries(maps[name])])) };
 }
 export async function importArchive(blob) {
   if (!(blob instanceof Blob) || blob.size === 0) throw error('Sélectionnez une sauvegarde Tety JSON.');
@@ -509,7 +732,8 @@ export async function importArchive(blob) {
   const incoming = await validateArchive(parsed);
   // Snapshot and merge happen inside the same write transaction: another tab cannot
   // modify data between conflict detection and the commit.
-  return transaction(STORE_NAMES, 'readwrite', (tx, done, fail) => {
+  const recovered = [];
+  const report = await transaction(STORE_NAMES, 'readwrite', (tx, done, fail) => {
     const existing = {};
     let remaining = STORE_NAMES.length;
     for (const name of STORE_NAMES) {
@@ -518,7 +742,16 @@ export async function importArchive(blob) {
         existing[name] = request.result;
         if (--remaining !== 0) return;
         try {
+          const committed = new Map(existing.interviews.map(record => [record.id, record]));
+          existing.interviews = reconcileInterviewDrafts(existing.interviews);
           const plan = mergeArchiveRecords(existing, incoming);
+          // A recovered edit participates in collision detection and is committed with the restore.
+          // Otherwise an archive equal to a pending edit could be duplicated, or an older archive
+          // could be treated as identical even though the collector has already changed the answer.
+          for (const record of existing.interviews) {
+            const prior = committed.get(record.id);
+            if (!prior || isNewerInterview(record, prior)) { tx.objectStore('interviews').put(record); recovered.push(record); }
+          }
           for (const collection of STORE_NAMES) for (const record of plan.additions[collection]) tx.objectStore(collection).add(record);
           const { merged, additions, ...report } = plan;
           done(report);
@@ -526,6 +759,8 @@ export async function importArchive(blob) {
       };
     }
   });
+  for (const record of recovered) cleanInterviewRecovery(record);
+  return report;
 }
 export async function estimateStorage() {
   if (!globalThis.navigator?.storage?.estimate) return { supported: false, usage: null, quota: null };
